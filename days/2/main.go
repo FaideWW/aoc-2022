@@ -12,14 +12,14 @@ type Outcome string
 
 const (
 	Rock     Move = "rock"
-	Paper         = "paper"
-	Scissors      = "scissors"
+	Paper    Move = "paper"
+	Scissors Move = "scissors"
 )
 
 const (
 	Loss Outcome = "loss"
-	Tie          = "tie"
-	Win          = "win"
+	Tie  Outcome = "tie"
+	Win  Outcome = "win"
 )
 
 type Round struct {
@@ -107,7 +107,7 @@ func computeRoundScore(round Round) int {
 	case Loss:
 		outcomeScore = 0
 	default:
-		panic(errors.New("Unknown outcome type"))
+		panic(errors.New("unknown outcome type"))
 	}
 
 	switch round.myMove {
@@ -118,7 +118,7 @@ func computeRoundScore(round Round) int {
 	case Scissors:
 		choiceScore = 3
 	default:
-		panic(errors.New("Unknown outcome type"))
+		panic(errors.New("unknown outcome type"))
 	}
 
 	return outcomeScore + choiceScore
@@ -134,7 +134,7 @@ func parseOpponentMove(input byte) Move {
 	if input == 'C' {
 		return Scissors
 	}
-	panic(errors.New("Unknown move type"))
+	panic(errors.New("unknown move type"))
 }
 
 func parseMyMove(input byte) Move {
@@ -147,7 +147,7 @@ func parseMyMove(input byte) Move {
 	if input == 'Z' {
 		return Scissors
 	}
-	panic(errors.New("Unknown move type"))
+	panic(errors.New("unknown move type"))
 }
 
 func getOutcome(opponentMove Move, myMove Move) Outcome {
@@ -185,33 +185,40 @@ func parseMyOutcome(input byte) Outcome {
 	if input == 'Z' {
 		return Win
 	}
-	panic(errors.New("Unknown move type"))
+	panic(errors.New("unknown move type"))
 }
 
 func determineMyMove(outcome Outcome, opponentMove Move) Move {
-	if outcome == Loss {
-		switch opponentMove {
-		case Rock:
-			return Scissors
-		case Paper:
-			return Rock
-		case Scissors:
-			return Paper
-		default:
-			panic(errors.New("Unknown move type"))
+	switch outcome {
+	case Loss:
+		{
+			switch opponentMove {
+			case Rock:
+				return Scissors
+			case Paper:
+				return Rock
+			case Scissors:
+				return Paper
+			default:
+				panic(errors.New("unknown move type"))
+			}
 		}
-	} else if outcome == Win {
-		switch opponentMove {
-		case Rock:
-			return Paper
-		case Paper:
-			return Scissors
-		case Scissors:
-			return Rock
-		default:
-			panic(errors.New("Unknown move type"))
+	case Win:
+		{
+			switch opponentMove {
+			case Rock:
+				return Paper
+			case Paper:
+				return Scissors
+			case Scissors:
+				return Rock
+			default:
+				panic(errors.New("unknown move type"))
+			}
 		}
-	} else {
-		return opponentMove
+	default:
+		{
+			return opponentMove
+		}
 	}
 }

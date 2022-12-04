@@ -76,7 +76,7 @@ func findDuplicates(str1 string, str2 string) []rune {
 	}
 
 	for _, r := range str2 {
-		if hash[r] == true {
+		if hash[r] {
 			duplicates = append(duplicates, r)
 		}
 	}
@@ -145,7 +145,7 @@ func findBadgeItem(sack1 Rucksack, sack2 Rucksack, sack3 Rucksack) rune {
 	secondDuplicates := findDuplicates(string(firstDuplicates), sack3.sackContents)
 
 	if len(secondDuplicates) != 1 {
-		panic(errors.New("Badge item count was not exactly 1"))
+		panic(errors.New("badge item count was not exactly 1"))
 	}
 	return secondDuplicates[0]
 }
