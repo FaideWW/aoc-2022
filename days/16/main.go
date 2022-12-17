@@ -9,19 +9,6 @@ import (
 	"strings"
 )
 
-type Action string
-
-const (
-	MOVE_TO    Action = "MOVE_TO"
-	OPEN_VALVE Action = "OPEN_VALVE"
-	WAIT       Action = "WAIT"
-)
-
-type Move struct {
-	action Action
-	target string
-}
-
 type Cavern struct {
 	valves            []string
 	usefulValves      []string
