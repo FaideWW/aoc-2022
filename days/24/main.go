@@ -1,9 +1,7 @@
 package main
 
 import (
-	//	"errors"
 	"container/heap"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,11 +24,11 @@ type Position struct {
 type Blizzards map[Position]byte
 
 type Valley struct {
-	width     int
-	height    int
-	entrance  Position
-	exit      Position
-	blizzards Blizzards
+	width         int
+	height        int
+	entrance      Position
+	exit          Position
+	blizzardCache map[int]Blizzards
 }
 
 type State struct {
@@ -56,8 +54,13 @@ func main() {
 	input := strings.TrimSpace(readInputFile(os.Args[1]))
 	valley := parseInput(input)
 	fmt.Printf("%+v\n", valley)
-	steps := valley.findPath()
-	fmt.Printf("goal reached in %d steps\n", steps)
+	steps1 := valley.findPath(valley.entrance, valley.exit, 0)
+	fmt.Printf("goal reached in %d steps\n", steps1)
+	steps2 := valley.findPath(valley.exit, valley.entrance, steps1)
+	fmt.Printf("start reached in %d steps\n", steps2)
+	steps3 := valley.findPath(valley.entrance, valley.exit, steps2)
+	fmt.Printf("goal reached in %d steps\n", steps3)
+
 }
 
 func readInputFile(filename string) string {
@@ -110,43 +113,50 @@ func parseInput(input string) Valley {
 		}
 	}
 
+	blizzardCache := make(map[int]Blizzards)
+	blizzardCache[0] = blizzards
+
 	return Valley{
-		height:    len(lines),
-		width:     len(lines[0]),
-		entrance:  entrance,
-		exit:      exit,
-		blizzards: blizzards,
+		height:        len(lines),
+		width:         len(lines[0]),
+		entrance:      entrance,
+		exit:          exit,
+		blizzardCache: blizzardCache,
 	}
 }
 
-func (v *Valley) findPath() int {
-	start := v.entrance
-	goal := v.exit
+// A* search for shortest path from start to goal, starting at initialTime
+// (important for blizzard positioning)
+func (v *Valley) findPath(start Position, goal Position, initialTime int) int {
+	if _, ok := v.blizzardCache[initialTime]; !ok {
+		v.blizzardCache[initialTime] = advanceBlizzards(v.blizzardCache[0], v.width, v.height, initialTime)
+	}
 
-	// memoized list of blizzard positions at a given time
-	blizzardCache := make(map[int]Blizzards)
-	blizzardCache[0] = v.blizzards
+	heuristic := func(nextState State) int {
+		// heruistic is the manhattan distance to the goal
+		return (goal.x - nextState.pos.x) + (goal.y - nextState.pos.y)
+	}
 
 	getNextPositions := func(state State) []Position {
-		cycleTime := state.time % (v.width - 2)
-		b, ok := blizzardCache[cycleTime]
+		nextTime := (state.time + 1)
+		// I believe there's a repeating cycle of blizzards based on the width of
+		// the valley, since blizzards move at a constant rate in one direction
+		// forever. However, this optimization doesn't seem necessary (it runs fast
+		// enough without) and using the below line doesn't give the correct
+		// result, so noting that there is time to be gained by figuring this out.
+		// cycleTime := (state.time + 1) % (v.width - 2)
+		b, ok := v.blizzardCache[nextTime]
 		if !ok {
-			blizzardCache[cycleTime] = advanceBlizzards(blizzardCache[0], v.width, v.height, state.time)
-			b = blizzardCache[cycleTime]
+			v.blizzardCache[nextTime] = advanceBlizzards(v.blizzardCache[0], v.width, v.height, nextTime)
+			b = v.blizzardCache[nextTime]
 		}
 
 		candidates := make([]Position, 0)
-		// fmt.Printf(" computing candidates for %+v - blizzard dict %+v\n", state, b)
 
 		north := Position{state.pos.x, state.pos.y - 1}
 		east := Position{state.pos.x + 1, state.pos.y}
 		south := Position{state.pos.x, state.pos.y + 1}
 		west := Position{state.pos.x - 1, state.pos.y}
-
-		// fmt.Printf("  testing north (%v) - inbounds %t blizzards? %04b\n", north, v.inBounds(north), b[north])
-		// fmt.Printf("  testing east (%v) - inbounds %t blizzards? %04b\n", east, v.inBounds(east), b[east])
-		// fmt.Printf("  testing south (%v) - inbounds %t blizzards? %04b\n", south, v.inBounds(south), b[south])
-		// fmt.Printf("  testing west (%v) - inbounds %t blizzards? %04b\n", west, v.inBounds(west), b[west])
 
 		if v.inBounds(north) && b[north] == 0 {
 			candidates = append(candidates, north)
@@ -168,7 +178,7 @@ func (v *Valley) findPath() int {
 		return candidates
 	}
 
-	startingState := State{start, 0}
+	startingState := State{start, initialTime}
 
 	frontier := make(PriorityQueue, 1)
 	frontier[0] = &PQItem{
@@ -183,39 +193,30 @@ func (v *Valley) findPath() int {
 
 	costs[startingState] = 0
 
-	explored := make(map[State]bool)
-
-	i := 0
+	var goalState State
 	for frontier.Len() > 0 {
-		i++
-		current := frontier[0]
-		frontier = frontier[1:]
+		current := heap.Pop(&frontier).(*PQItem).value
 
-		// if i%1000 == 0 {
-		// 	fmt.Printf("iteration %d - testing %+v\n", i, current)
-		// }
-		if i > 500 {
+		if current.pos == goal {
+			goalState = current
 			break
 		}
 
-		if current.pos == goal {
-			return current.time
-		}
-
-		fmt.Printf("exploring %+v\n", current)
-
 		candidates := getNextPositions(current)
-		fmt.Printf(" candidates: %+v\n", candidates)
 		for _, candidate := range candidates {
 			next := State{candidate, current.time + 1}
-			if !explored[next] {
-				explored[next] = true
-				frontier = append(frontier, next)
+			newCost := costs[current] + 1
+			foundCost, ok := costs[next]
+			if !ok || foundCost < costs[next] {
+				costs[next] = newCost
+				priority := newCost + heuristic(next)
+				heap.Push(&frontier, &PQItem{value: next, priority: priority})
+				cameFrom[next] = current
 			}
 		}
 	}
 
-	panic(errors.New("no path found"))
+	return goalState.time
 }
 
 // Advance all of the blizzards 1 step
@@ -259,87 +260,6 @@ func advanceBlizzards(blizzards Blizzards, width int, height int, steps int) Bli
 	}
 
 	return nextBlizzards
-}
-
-func (v *Valley) print() string {
-	var output string
-	for y := 0; y < v.height; y++ {
-		var line string
-		for x := 0; x < v.width; x++ {
-			pos := Position{x, y}
-			switch y {
-			case 0:
-				{
-					if pos == v.entrance {
-						line += "."
-					} else {
-						line += "#"
-					}
-				}
-			case v.height - 1:
-				{
-					if pos == v.exit {
-						line += "."
-					} else {
-						line += "#"
-					}
-
-				}
-			default:
-				{
-					switch x {
-					case 0:
-						{
-							line += "#"
-						}
-					case v.width - 1:
-						{
-							line += "#"
-						}
-					default:
-						{
-							activeBlizzards := 0
-							var tile string
-							// count how many blizzards are active
-							if ((v.blizzards[pos] >> NORTH) & 1) == 1 {
-								activeBlizzards++
-								tile = "^"
-							}
-							if ((v.blizzards[pos] >> EAST) & 1) == 1 {
-								activeBlizzards++
-								tile = ">"
-							}
-							if ((v.blizzards[pos] >> SOUTH) & 1) == 1 {
-								activeBlizzards++
-								tile = "v"
-							}
-							if ((v.blizzards[pos] >> WEST) & 1) == 1 {
-								activeBlizzards++
-								tile = "<"
-							}
-							switch activeBlizzards {
-							case 0:
-								{
-									line += "."
-								}
-							case 1:
-								{
-									line += tile
-								}
-							default:
-								{
-									line += fmt.Sprint(activeBlizzards)
-								}
-							}
-						}
-					}
-
-				}
-			}
-		}
-		output += fmt.Sprintf("%s\n", line)
-	}
-	return output
 }
 
 // Wraps a value around [min, max)
@@ -393,4 +313,89 @@ func (pq *PriorityQueue) update(item *PQItem, value State, priority int) {
 	item.value = value
 	item.priority = priority
 	heap.Fix(pq, item.index)
+}
+
+func (v *Valley) print(blizzards Blizzards, player Position) string {
+	var output string
+	for y := 0; y < v.height; y++ {
+		var line string
+		for x := 0; x < v.width; x++ {
+			pos := Position{x, y}
+			if player == pos {
+				line += "E"
+				continue
+			}
+			switch y {
+			case 0:
+				{
+					if pos == v.entrance {
+						line += "."
+					} else {
+						line += "#"
+					}
+				}
+			case v.height - 1:
+				{
+					if pos == v.exit {
+						line += "."
+					} else {
+						line += "#"
+					}
+
+				}
+			default:
+				{
+					switch x {
+					case 0:
+						{
+							line += "#"
+						}
+					case v.width - 1:
+						{
+							line += "#"
+						}
+					default:
+						{
+							activeBlizzards := 0
+							var tile string
+							// count how many blizzards are active
+							if ((blizzards[pos] >> NORTH) & 1) == 1 {
+								activeBlizzards++
+								tile = "^"
+							}
+							if ((blizzards[pos] >> EAST) & 1) == 1 {
+								activeBlizzards++
+								tile = ">"
+							}
+							if ((blizzards[pos] >> SOUTH) & 1) == 1 {
+								activeBlizzards++
+								tile = "v"
+							}
+							if ((blizzards[pos] >> WEST) & 1) == 1 {
+								activeBlizzards++
+								tile = "<"
+							}
+							switch activeBlizzards {
+							case 0:
+								{
+									line += "."
+								}
+							case 1:
+								{
+									line += tile
+								}
+							default:
+								{
+									line += fmt.Sprint(activeBlizzards)
+								}
+							}
+						}
+					}
+
+				}
+			}
+		}
+		output += fmt.Sprintf("%s\n", line)
+	}
+	return output
 }
